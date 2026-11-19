@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIGPMAT · Gestión de personal médico y turnos hospitalarios</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="login">
+  <form id="lform" class="lcard">
+    <span id="llogo"></span><h2>SIGPMAT</h2>
+    <p>Sistema Integral de Gestión de Personal Médico y Asignación de Turnos Hospitalarios</p>
+    <label>Usuario<input id="luser" autocomplete="username" required autofocus></label>
+    <label>Contraseña<input id="lpass" type="password" autocomplete="current-password" required></label>
+    <div id="lerr"></div>
+    <button class="btn">Iniciar sesión</button>
+    <small>Proyecto universitario · v1.0</small>
+  </form>
+</div>
+<div id="app">
+<aside class="side">
+  <div class="brand" title="Sistema Integral de Gestión de Personal Médico y Asignación de Turnos Hospitalarios">
+    <span id="logo"></span><div><b>SIGPMAT</b><small>Gestión de personal médico</small></div>
+  </div>
+  <nav id="menu"></nav>
+  <div class="sfoot">Proyecto universitario<br>SIGPMAT · v1.0</div>
+</aside>
+<div class="wrap">
+  <header class="top">
+    <div><b>Hospital Nacional Rosales</b><small>Administración de personal y turnos hospitalarios</small></div>
+    <div class="user"><span class="av" id="uav"></span><div><b id="unom"></b><small id="urol"></small></div><a href="#" id="logout">Cerrar sesión</a></div>
+  </header>
+  <main id="view"></main>
+  <footer><span>SIGPMAT · Sistema Integral de Gestión de Personal Médico y Asignación de Turnos Hospitalarios</span><span id="fdate"></span></footer>
+</div>
+</div>
+<button id="cbbtn" class="cb-btn" title="Asistente" aria-label="Abrir el asistente">💬</button>
+<div id="cb" class="cb">
+  <div class="cb-h"><b>Asistente SIGPMAT</b><button id="cbx" aria-label="Cerrar">×</button></div>
+  <div id="cbm" class="cb-m"></div>
+  <div id="cbs" class="cb-s"></div>
+  <form id="cbf" class="cb-f"><input id="cbi" placeholder="Escriba su pregunta..." maxlength="300" autocomplete="off"><button class="btn">Enviar</button></form>
+</div>
+<dialog id="dlg"><form id="frm"></form></dialog>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
