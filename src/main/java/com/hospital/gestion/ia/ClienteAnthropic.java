@@ -43,6 +43,11 @@ public class ClienteAnthropic implements ProveedorIA {
     }
 
     @Override
+    public String proveedor() {
+        return "anthropic";
+    }
+
+    @Override
     public String modelo() {
         return modelo;
     }

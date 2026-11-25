@@ -1,5 +1,6 @@
 package com.hospital.gestion.chatbot;
 
+import com.hospital.gestion.ia.ProveedorIA;
 import com.hospital.gestion.model.Cita;
 import com.hospital.gestion.model.Disponibilidad;
 import com.hospital.gestion.model.Empleado;
@@ -17,6 +18,8 @@ import com.hospital.gestion.repository.VacacionRepository;
 import com.hospital.gestion.security.Contexto;
 import com.hospital.gestion.security.Grupos;
 import com.hospital.gestion.security.Permisos;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +40,10 @@ import java.util.Optional;
 @Transactional(readOnly = true)
 public class ChatbotService {
 
-    public record Respuesta(String texto, List<String> sugerencias) { }
+    /** modo: "reglas" (respuesta del asistente con datos del sistema) o "ia" (respuesta generada por IA). */
+    public record Respuesta(String texto, List<String> sugerencias, String modo) { }
+
+    private static final Logger log = LoggerFactory.getLogger(ChatbotService.class);
 
     private static final Locale ES = Locale.forLanguageTag("es");
     private static final DateTimeFormatter DIA = DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", ES);
@@ -57,10 +63,12 @@ public class ChatbotService {
     private final IncidenciaRepository incidencias;
     private final CitaRepository citas;
     private final EmpleadoRepository empleados;
+    private final ProveedorIA proveedor;
+    private final LimiteConsultas limite;
 
     public ChatbotService(TurnoRepository turnos, DisponibilidadRepository disponibilidades, VacacionRepository vacaciones,
                           PermisoRepository permisos, IncidenciaRepository incidencias, CitaRepository citas,
-                          EmpleadoRepository empleados) {
+                          EmpleadoRepository empleados, ProveedorIA proveedor, LimiteConsultas limite) {
         this.turnos = turnos;
         this.disponibilidades = disponibilidades;
         this.vacaciones = vacaciones;
@@ -68,10 +76,17 @@ public class ChatbotService {
         this.incidencias = incidencias;
         this.citas = citas;
         this.empleados = empleados;
+        this.proveedor = proveedor;
+        this.limite = limite;
     }
 
     public Respuesta responder(Contexto ctx, String mensaje) {
-        String texto = switch (Intenciones.detectar(mensaje)) {
+        Intencion intencion = Intenciones.detectar(mensaje);
+        if (intencion == Intencion.DESCONOCIDA) {
+            Optional<Respuesta> deIa = consultarIA(ctx, mensaje);
+            if (deIa.isPresent()) return deIa.get();
+        }
+        String texto = switch (intencion) {
             case COMO_SOLICITAR -> comoSolicitar(Intenciones.normalizar(mensaje));
             case CONTRASENA -> "Para cambiar tu contraseña entra a Mi espacio laboral → Mi cuenta → Cambiar contraseña. "
                     + "Debe tener al menos 8 caracteres, con letras y números, y ser distinta de la actual.";
@@ -93,7 +108,34 @@ public class ChatbotService {
             case DESCONOCIDA -> "No entendí tu pregunta. Soy un asistente básico: entiendo preguntas sencillas sobre tu trabajo en el sistema. "
                     + "Prueba con una de las opciones de abajo o escribe «ayuda».";
         };
-        return new Respuesta(texto, sugerencias(ctx));
+        return new Respuesta(texto, sugerencias(ctx), "reglas");
+    }
+
+    /**
+     * Preguntas que las reglas no entienden: si hay IA configurada, las responde la IA. A la IA solo se envía lo que la
+     * persona escribió y el conocimiento general del sistema (nunca datos de personas ni de pacientes).
+     */
+    private Optional<Respuesta> consultarIA(Contexto ctx, String mensaje) {
+        if (!proveedor.disponible()) return Optional.empty();
+        if (!limite.permitir(ctx.idUsuario())) {
+            return Optional.of(new Respuesta("Alcanzaste el límite de consultas con IA de esta hora. Puedes seguir con preguntas sencillas, "
+                    + "por ejemplo «mi próximo turno» o «ayuda».", sugerencias(ctx), "reglas"));
+        }
+        try {
+            String texto = proveedor.completar(BaseConocimiento.instrucciones(ctx.grupo(), seccionesVisibles(ctx)), mensaje);
+            return Optional.of(new Respuesta(texto, sugerencias(ctx), "ia"));
+        } catch (RuntimeException e) {
+            log.warn("El chatbot no pudo consultar a la IA: {}", e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static List<String> seccionesVisibles(Contexto ctx) {
+        List<String> secciones = new ArrayList<>();
+        Permisos.para(ctx.grupo()).forEach((recurso, p) -> {
+            if (Boolean.TRUE.equals(p.get("leer"))) secciones.add(BaseConocimiento.seccion(recurso));
+        });
+        return secciones;
     }
 
     // ---------------- información propia ----------------
@@ -268,6 +310,7 @@ public class ChatbotService {
         if (puedeLeer(ctx, "permisos")) sb.append("• Permisos y vacaciones pendientes de aprobar\n");
         if (puedeLeer(ctx, "turnos")) sb.append("• Los turnos de hoy\n");
         if (puedeLeer(ctx, "citas")) sb.append("• Las citas de hoy\n");
+        if (proveedor.disponible()) sb.append("• Dudas generales sobre cómo usar el sistema, con tus propias palabras (respuesta de IA)\n");
         sb.append("Escribe tu pregunta con tus propias palabras.");
         return sb.toString();
     }

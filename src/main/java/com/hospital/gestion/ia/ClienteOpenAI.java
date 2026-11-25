@@ -41,6 +41,11 @@ public class ClienteOpenAI implements ProveedorIA {
     }
 
     @Override
+    public String proveedor() {
+        return "openai";
+    }
+
+    @Override
     public String modelo() {
         return modelo;
     }

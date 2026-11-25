@@ -8,6 +8,9 @@ public interface ProveedorIA {
 
     String modelo();
 
+    /** Nombre del proveedor: "openai" o "anthropic". */
+    String proveedor();
+
     /** Envía las instrucciones (sistema) y el contenido (usuario) y devuelve el texto de la respuesta. */
     String completar(String sistema, String usuario);
 }

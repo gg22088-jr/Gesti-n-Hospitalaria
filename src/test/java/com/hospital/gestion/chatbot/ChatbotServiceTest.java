@@ -1,5 +1,6 @@
 package com.hospital.gestion.chatbot;
 
+import com.hospital.gestion.ia.ProveedorIA;
 import com.hospital.gestion.model.Cita;
 import com.hospital.gestion.model.Departamento;
 import com.hospital.gestion.model.Empleado;
@@ -16,15 +17,22 @@ import com.hospital.gestion.repository.VacacionRepository;
 import com.hospital.gestion.security.Contexto;
 import com.hospital.gestion.security.Grupos;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ChatbotServiceTest {
@@ -32,8 +40,13 @@ class ChatbotServiceTest {
     private final TurnoRepository turnos = mock(TurnoRepository.class);
     private final PermisoRepository permisos = mock(PermisoRepository.class);
     private final CitaRepository citas = mock(CitaRepository.class);
-    private final ChatbotService bot = new ChatbotService(turnos, mock(DisponibilidadRepository.class), mock(VacacionRepository.class),
-            permisos, mock(IncidenciaRepository.class), citas, mock(EmpleadoRepository.class));
+    private final ProveedorIA proveedor = mock(ProveedorIA.class);
+    private final ChatbotService bot = crear(proveedor, new LimiteConsultas(100, Duration.ofHours(1)));
+
+    private ChatbotService crear(ProveedorIA ia, LimiteConsultas limite) {
+        return new ChatbotService(turnos, mock(DisponibilidadRepository.class), mock(VacacionRepository.class), permisos,
+                mock(IncidenciaRepository.class), citas, mock(EmpleadoRepository.class), ia, limite);
+    }
 
     private static Contexto ctx(String grupo, Integer empleado, Integer departamento) {
         return new Contexto(1, grupo, empleado, departamento);
@@ -173,5 +186,69 @@ class ChatbotServiceTest {
 
         assertTrue(r.texto().contains("No entendí"), r.texto());
         assertFalse(r.sugerencias().isEmpty());
+    }
+
+    // ---------- con IA ----------
+
+    @Test
+    void sinIaUnaPreguntaLibreSeResponderConReglas() {
+        ChatbotService.Respuesta r = bot.responder(ctx(Grupos.OPERATIVO, 5, 9), "¿qué tiempo hará mañana?");
+
+        assertEquals("reglas", r.modo());
+        assertTrue(r.texto().contains("No entendí"), r.texto());
+    }
+
+    @Test
+    void conIaLasPreguntasLibresLasResponderLaIaSinEnviarDatosDePersonas() {
+        when(proveedor.disponible()).thenReturn(true);
+        when(proveedor.completar(anyString(), anyString())).thenReturn("Entra a Reportes y pulsa Analizar.");
+
+        ChatbotService.Respuesta r = bot.responder(ctx(Grupos.JEFE, 3, 2), "¿para qué sirve el botón de analizar?");
+
+        assertEquals("ia", r.modo());
+        assertEquals("Entra a Reportes y pulsa Analizar.", r.texto());
+        ArgumentCaptor<String> sistema = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> usuario = ArgumentCaptor.forClass(String.class);
+        verify(proveedor).completar(sistema.capture(), usuario.capture());
+        assertEquals("¿para qué sirve el botón de analizar?", usuario.getValue());
+        String perfil = sistema.getValue().substring(sistema.getValue().indexOf("Perfil de quien pregunta"));
+        assertTrue(perfil.contains("Jefatura"), perfil);
+        assertFalse(perfil.contains("Pacientes"), "la jefatura no ve pacientes: " + perfil);
+    }
+
+    @Test
+    void lasPreguntasQueYaSeEntiendenNoGastanIa() {
+        when(proveedor.disponible()).thenReturn(true);
+        when(turnos.findByEmpleado_IdEmpleado(5)).thenReturn(List.of());
+
+        bot.responder(ctx(Grupos.OPERATIVO, 5, 9), "mi próximo turno");
+
+        verify(proveedor, never()).completar(anyString(), anyString());
+    }
+
+    @Test
+    void siLaIaFallaSeUsanLasReglas() {
+        when(proveedor.disponible()).thenReturn(true);
+        when(proveedor.completar(anyString(), anyString())).thenThrow(new IllegalStateException("sin conexión"));
+
+        ChatbotService.Respuesta r = bot.responder(ctx(Grupos.OPERATIVO, 5, 9), "blablabla");
+
+        assertEquals("reglas", r.modo());
+        assertTrue(r.texto().contains("No entendí"), r.texto());
+    }
+
+    @Test
+    void alPasarElLimiteSeAvisaYNoSeLlamaMasALaIa() {
+        when(proveedor.disponible()).thenReturn(true);
+        when(proveedor.completar(anyString(), anyString())).thenReturn("respuesta de la IA");
+        ChatbotService limitado = crear(proveedor, new LimiteConsultas(1, Duration.ofHours(1)));
+        Contexto yo = ctx(Grupos.OPERATIVO, 5, 9);
+
+        assertEquals("ia", limitado.responder(yo, "blablabla").modo());
+        ChatbotService.Respuesta segunda = limitado.responder(yo, "blablabla");
+
+        assertEquals("reglas", segunda.modo());
+        assertTrue(segunda.texto().contains("límite"), segunda.texto());
+        verify(proveedor, times(1)).completar(anyString(), anyString());
     }
 }
