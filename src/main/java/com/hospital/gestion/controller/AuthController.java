@@ -9,10 +9,10 @@ import com.hospital.gestion.security.Grupos;
 import com.hospital.gestion.security.JwtService;
 import com.hospital.gestion.security.Permisos;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -65,8 +65,8 @@ public class AuthController {
                 motivo = "la contraseña en texto plano no coincide";
             }
         }
-        if (motivo != null) log.warn("Login rechazado para '{}': {}", req.nombreUsuario(), motivo);
         if (motivo != null) {
+            log.warn("Login rechazado para '{}': {}", req.nombreUsuario(), motivo);
             Map<String, Object> error = new LinkedHashMap<>();
             error.put("status", 401);
             error.put("mensaje", "Usuario o contraseña incorrectos");
@@ -87,7 +87,6 @@ public class AuthController {
     public record CambioContrasena(@NotBlank String actual,
                                    @NotBlank @Size(min = 8, max = 72, message = "La nueva contraseña debe tener entre 8 y 72 caracteres") String nueva) { }
 
-    /** El usuario cambia SU contraseña (el usuario sale del token). No modifica ningún dato personal. */
     @PostMapping("/contrasena")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cambiarContrasena(Authentication auth, @Valid @RequestBody CambioContrasena c) {
@@ -123,3 +122,23 @@ public class AuthController {
         usuario.put("idUsuario", u.getIdUsuario());
         usuario.put("nombreUsuario", u.getNombreUsuario());
         usuario.put("rol", u.getRol());
+        usuario.put("grupo", grupo);
+
+        Map<String, Object> empleado = null;
+        Empleado e = empleados.findFirstByUsuario_IdUsuario(u.getIdUsuario()).orElse(null);
+        if (e != null) {
+            empleado = new LinkedHashMap<>();
+            empleado.put("idEmpleado", e.getIdEmpleado());
+            empleado.put("nombre", e.getNombre());
+            empleado.put("apellido", e.getApellido());
+            empleado.put("cargo", e.getCargo());
+            empleado.put("departamento", e.getDepartamento() != null ? e.getDepartamento().getNombreDept() : null);
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("usuario", usuario);
+        body.put("empleado", empleado);
+        body.put("permisos", Permisos.para(grupo));
+        return body;
+    }
+}
