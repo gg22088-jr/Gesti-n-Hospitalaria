@@ -9,10 +9,10 @@ import com.hospital.gestion.security.Grupos;
 import com.hospital.gestion.security.JwtService;
 import com.hospital.gestion.security.Permisos;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -49,24 +49,15 @@ public class AuthController {
         String motivo = null;
         if (u == null) {
             motivo = "el usuario no existe";
-        } else if (!"Activo".equalsIgnoreCase(u.getEstado())) {
+        } else if (!"Activo".equals(u.getEstado())) {
             motivo = "el usuario está " + u.getEstado();
-        } else {
-            String guardada = u.getContrasena();
-            boolean esBcrypt = guardada != null && (guardada.startsWith("$2a$") || guardada.startsWith("$2b$") || guardada.startsWith("$2y$"));
-            if (esBcrypt) {
-                if (!encoder.matches(req.contrasena(), guardada)) {
-                    motivo = "la contraseña BCrypt no coincide";
-                }
-            } else if (req.contrasena().equals(guardada)) {
-                u.setContrasena(encoder.encode(req.contrasena()));
-                usuarios.save(u);
-            } else {
-                motivo = "la contraseña en texto plano no coincide";
-            }
+        } else if (!encoder.matches(req.contrasena(), u.getContrasena())) {
+            String h = u.getContrasena();
+            motivo = "la contraseña no coincide (hash guardado: " + h.substring(0, Math.min(7, h.length()))
+                    + ", largo " + h.length() + "; contraseña recibida de " + req.contrasena().length() + " caracteres)";
         }
+        if (motivo != null) log.warn("Login rechazado para '{}': {}", req.nombreUsuario(), motivo);
         if (motivo != null) {
-            log.warn("Login rechazado para '{}': {}", req.nombreUsuario(), motivo);
             Map<String, Object> error = new LinkedHashMap<>();
             error.put("status", 401);
             error.put("mensaje", "Usuario o contraseña incorrectos");
@@ -87,6 +78,7 @@ public class AuthController {
     public record CambioContrasena(@NotBlank String actual,
                                    @NotBlank @Size(min = 8, max = 72, message = "La nueva contraseña debe tener entre 8 y 72 caracteres") String nueva) { }
 
+    /** El usuario cambia SU contraseña (el usuario sale del token). No modifica ningún dato personal. */
     @PostMapping("/contrasena")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void cambiarContrasena(Authentication auth, @Valid @RequestBody CambioContrasena c) {
