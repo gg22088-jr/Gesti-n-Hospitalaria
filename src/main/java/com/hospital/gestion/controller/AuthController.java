@@ -44,17 +44,26 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity> login(@Valid @RequestBody LoginRequest req) {
         Usuario u = usuarios.findByNombreUsuario(req.nombreUsuario()).orElse(null);
         String motivo = null;
         if (u == null) {
             motivo = "el usuario no existe";
-        } else if (!"Activo".equals(u.getEstado())) {
+        } else if (!"Activo".equalsIgnoreCase(u.getEstado())) {
             motivo = "el usuario está " + u.getEstado();
-        } else if (!encoder.matches(req.contrasena(), u.getContrasena())) {
-            String h = u.getContrasena();
-            motivo = "la contraseña no coincide (hash guardado: " + h.substring(0, Math.min(7, h.length()))
-                    + ", largo " + h.length() + "; contraseña recibida de " + req.contrasena().length() + " caracteres)";
+        } else {
+            String guardada = u.getContrasena();
+            boolean esBcrypt = guardada != null && (guardada.startsWith("$2a$") || guardada.startsWith("$2b$") || guardada.startsWith("$2y$"));
+            if (esBcrypt) {
+                if (!encoder.matches(req.contrasena(), guardada)) {
+                    motivo = "la contraseña BCrypt no coincide";
+                }
+            } else if (req.contrasena().equals(guardada)) {
+                u.setContrasena(encoder.encode(req.contrasena()));
+                usuarios.save(u);
+            } else {
+                motivo = "la contraseña en texto plano no coincide";
+            }
         }
         if (motivo != null) log.warn("Login rechazado para '{}': {}", req.nombreUsuario(), motivo);
         if (motivo != null) {
@@ -69,7 +78,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity<Map<String, Object>> me(Authentication auth) {
+    public ResponseEntity> me(Authentication auth) {
         Usuario u = usuarios.findByNombreUsuario(auth.getName()).orElse(null);
         if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(perfil(u));
@@ -114,23 +123,3 @@ public class AuthController {
         usuario.put("idUsuario", u.getIdUsuario());
         usuario.put("nombreUsuario", u.getNombreUsuario());
         usuario.put("rol", u.getRol());
-        usuario.put("grupo", grupo);
-
-        Map<String, Object> empleado = null;
-        Empleado e = empleados.findFirstByUsuario_IdUsuario(u.getIdUsuario()).orElse(null);
-        if (e != null) {
-            empleado = new LinkedHashMap<>();
-            empleado.put("idEmpleado", e.getIdEmpleado());
-            empleado.put("nombre", e.getNombre());
-            empleado.put("apellido", e.getApellido());
-            empleado.put("cargo", e.getCargo());
-            empleado.put("departamento", e.getDepartamento() != null ? e.getDepartamento().getNombreDept() : null);
-        }
-
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("usuario", usuario);
-        body.put("empleado", empleado);
-        body.put("permisos", Permisos.para(grupo));
-        return body;
-    }
-}
