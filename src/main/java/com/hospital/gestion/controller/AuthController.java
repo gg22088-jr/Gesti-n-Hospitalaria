@@ -44,7 +44,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity> login(@Valid @RequestBody LoginRequest req) {
+    public ResponseEntity<Map<String, Object>> login(@Valid @RequestBody LoginRequest req) {
         Usuario u = usuarios.findByNombreUsuario(req.nombreUsuario()).orElse(null);
         String motivo = null;
         if (u == null) {
@@ -69,7 +69,7 @@ public class AuthController {
     }
 
     @GetMapping("/me")
-    public ResponseEntity> me(Authentication auth) {
+    public ResponseEntity<Map<String, Object>> me(Authentication auth) {
         Usuario u = usuarios.findByNombreUsuario(auth.getName()).orElse(null);
         if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         return ResponseEntity.ok(perfil(u));
